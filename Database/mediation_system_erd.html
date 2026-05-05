@@ -1,0 +1,168 @@
+
+<style>
+#erd svg { width: 100%; height: auto; }
+.mermaid-label { font-family: var(--font-sans) !important; }
+</style>
+<div id="erd" style="padding: 1rem 0;"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#2a2a3e' : '#EEEDFE',
+    primaryBorderColor: dark ? '#534AB7' : '#534AB7',
+    primaryTextColor: dark ? '#c2c0b6' : '#26215C',
+    secondaryColor: dark ? '#1a2e28' : '#E1F5EE',
+    secondaryBorderColor: dark ? '#0F6E56' : '#0F6E56',
+    tertiaryColor: dark ? '#2e1f1a' : '#FAECE7',
+    tertiaryBorderColor: dark ? '#993C1D' : '#993C1D',
+  },
+});
+
+const diagram = `erDiagram
+  users {
+    int id PK
+    varchar username
+    varchar password_hash
+    enum role
+    boolean is_active
+    timestamp created_at
+  }
+
+  nodes {
+    int id PK
+    varchar name
+    enum type
+    enum protocol
+    varchar ip
+    int port
+    varchar username
+    varchar password
+    varchar remote_path
+    varchar archive_path
+    boolean is_active
+  }
+
+  node_cdr_config {
+    int id PK
+    int node_id FK
+    enum cdr_type
+    enum file_format
+    varchar file_pattern
+    varchar decoder_class
+  }
+
+  cdr_field_mapping {
+    int id PK
+    int node_cdr_config_id FK
+    varchar source_field
+    varchar target_field
+    enum field_type
+    boolean is_required
+  }
+
+  cdr_filters {
+    int id PK
+    int node_cdr_config_id FK
+    varchar field_name
+    enum operator
+    varchar value
+    enum action
+  }
+
+  node_output_config {
+    int id PK
+    int node_id FK
+    enum output_format
+    varchar file_prefix
+    char delimiter
+  }
+
+  output_field_mapping {
+    int id PK
+    int node_output_config_id FK
+    varchar source_field
+    varchar target_field
+    int field_order
+    boolean is_required
+  }
+
+  mediation_rules {
+    int id PK
+    int source_node_id FK
+    int destination_node_id FK
+    boolean is_active
+    timestamp created_at
+  }
+
+  cdr_files {
+    int id PK
+    int source_node_id FK
+    varchar file_name
+    bigint file_size
+    enum status
+    timestamp downloaded_at
+    timestamp processed_at
+    text error_message
+  }
+
+  cdr_file_deliveries {
+    int id PK
+    int cdr_file_id FK
+    int dest_node_id FK
+    enum status
+    timestamp uploaded_at
+    text error_message
+  }
+
+  nodes ||--o| node_cdr_config : "has (upstream)"
+  nodes ||--o| node_output_config : "has (downstream)"
+  nodes ||--o{ cdr_files : "downloads"
+  nodes ||--o{ mediation_rules : "source"
+  nodes ||--o{ mediation_rules : "destination"
+  nodes ||--o{ cdr_file_deliveries : "receives"
+
+  node_cdr_config ||--o{ cdr_field_mapping : "defines fields"
+  node_cdr_config ||--o{ cdr_filters : "applies filters"
+
+  node_output_config ||--o{ output_field_mapping : "maps output"
+
+  cdr_files ||--o{ cdr_file_deliveries : "delivered via"
+`;
+
+const { svg } = await mermaid.render('erd-svg', diagram);
+document.getElementById('erd').innerHTML = svg;
+
+document.querySelectorAll('#erd svg .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd svg .row-rect-odd path, #erd svg .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
