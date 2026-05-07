@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+
+  msc-generator:
+    build:
+      context: ./generator
+    container_name: msc-generator
+    command: ["configs/msc.conf"]
+    volumes:
+      - ./Up-Stream-Nodes/msc-node/cdr-files:/data/msc-node/cdr-files
+    restart: unless-stopped
+
+  pgw-generator:
+    build:
+      context: ./generator
+    container_name: pgw-generator
+    command: ["configs/pgw.conf"]
+    volumes:
+      - ./Up-Stream-Nodes/pgw-node/cdr-files:/data/pgw-node/cdr-files
+    restart: unless-stopped
+
+  smsc-generator:
+    build:
+      context: ./generator
+    container_name: smsc-generator
+    command: ["configs/smsc.conf"]
+    volumes:
+      - ./Up-Stream-Nodes/smsc-node/cdr-files:/data/smsc-node/cdr-files
+    restart: unless-stopped
