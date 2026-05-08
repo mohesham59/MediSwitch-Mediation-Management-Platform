@@ -2,6 +2,10 @@ version: '3.8'
 
 services:
 
+  # =========================
+  # UPSTREAM NODES
+  # =========================
+
   msc-generator:
     build:
       context: ./generator
@@ -27,4 +31,35 @@ services:
     command: ["configs/smsc.conf"]
     volumes:
       - ./Up-Stream-Nodes/smsc-node/cdr-files:/data/smsc-node/cdr-files
+    restart: unless-stopped
+
+  # =========================
+  # DOWNSTREAM NODES
+  # =========================
+
+  billing-watcher:
+    build:
+      context: ./Down-Stream-Nodes
+    container_name: billing-watcher
+    command: ["configs/billing.conf"]
+    volumes:
+      - ./Down-Stream-Nodes/billing-node/cdr-files:/data/billing-node/cdr-files
+    restart: unless-stopped
+
+  charging-watcher:
+    build:
+      context: ./Down-Stream-Nodes
+    container_name: charging-watcher
+    command: ["configs/charging.conf"]
+    volumes:
+      - ./Down-Stream-Nodes/charging-node/cdr-files:/data/charging-node/cdr-files
+    restart: unless-stopped
+
+  fraud-watcher:
+    build:
+      context: ./Down-Stream-Nodes
+    container_name: fraud-watcher
+    command: ["configs/fraud.conf"]
+    volumes:
+      - ./Down-Stream-Nodes/fraud-node/cdr-files:/data/fraud-node/cdr-files
     restart: unless-stopped
