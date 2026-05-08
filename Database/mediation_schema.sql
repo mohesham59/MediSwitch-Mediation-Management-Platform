@@ -23,10 +23,16 @@ CREATE TABLE nodes (
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
+-- Upstream nodes
 INSERT INTO nodes (name, node_type, protocol, ip, port, username, password_hash, remote_path, cdr_format) VALUES
 ('MSC',  'UPSTREAM', 'SFTP', 'msc-node',  2221, 'msc',  'CHANGE_ME', '/cdr-files', 'voice'),
 ('SMSC', 'UPSTREAM', 'SFTP', 'smsc-node', 2221, 'smsc', 'CHANGE_ME', '/cdr-files', 'sms'),
 ('PGW',  'UPSTREAM', 'SFTP', 'pgw-node',  2221, 'pgw',  'CHANGE_ME', '/cdr-files', 'data');
+
+-- Downstream nodes
+INSERT INTO nodes (name, node_type, protocol, ip, port, username, password_hash, remote_path, cdr_format) VALUES
+('Billing', 'DOWNSTREAM', 'SFTP', 'billing-node', 2221, 'billing', 'CHANGE_ME', '/cdr-files', NULL),
+('Fraud',   'DOWNSTREAM', 'SFTP', 'fraud-node',   2221, 'fraud',   'CHANGE_ME', '/cdr-files', NULL);
 
 
 -- ----------------------------------------------------------------
@@ -41,6 +47,13 @@ CREATE TABLE mediation_rules (
     is_active            BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (source_node_id, destination_node_id)
 );
+
+INSERT INTO mediation_rules (source_node_id, destination_node_id, is_active) VALUES
+(1, 4, TRUE),  -- MSC  -> Billing
+(1, 5, TRUE),  -- MSC  -> Fraud
+(2, 4, TRUE),  -- SMSC -> Billing
+(3, 4, TRUE),  -- PGW  -> Billing
+(3, 5, TRUE);  -- PGW  -> Fraud
 
 
 -- ----------------------------------------------------------------
@@ -67,6 +80,53 @@ CREATE TABLE filtration_rules (
     value             VARCHAR(500),
     is_active         BOOLEAN      NOT NULL DEFAULT TRUE
 );
+
+-- ── Rule 1: MSC -> Billing ───────────────────────────────────────
+-- Drop zero-duration calls (no billable event)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(1, 'FIELD_EQUALS', 'duration', '0');
+
+-- Drop calls to emergency / short-code numbers
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(1, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- ── Rule 2: MSC -> Fraud ─────────────────────────────────────────
+-- Drop zero-duration calls (no fraud signal in empty calls)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(2, 'FIELD_EQUALS', 'duration', '0');
+
+-- Drop calls to emergency numbers (not fraud targets)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(2, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- ── Rule 3: SMSC -> Billing ──────────────────────────────────────
+-- Drop messages sent to emergency / short-code numbers
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(3, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- Drop messages with zero length (empty / system messages)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(3, 'FIELD_EQUALS', 'message_length', '0');
+
+-- ── Rule 4: PGW -> Billing ───────────────────────────────────────
+-- Drop sessions with zero data usage (not billable)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(4, 'FIELD_EQUALS', 'data_usage_mb', '0');
+
+-- Drop sessions shorter than 1 second (handshake-only, not billable)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(4, 'FIELD_LESS_THAN', 'session_duration', '1');
+
+-- ── Rule 5: PGW -> Fraud ─────────────────────────────────────────
+-- Drop sessions with zero data usage (no fraud signal)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(5, 'FIELD_EQUALS', 'data_usage_mb', '0');
+
+-- Flag suspiciously large sessions for fraud (over 10000 MB) using regex on string value.
+-- Note: for numeric range checks prefer FIELD_LESS_THAN; this shows REGEX_MATCH usage.
+-- Drop IMSIs matching test/internal patterns (e.g. 00101xxxxxxxxx)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(5, 'REGEX_MATCH', 'imsi', '^00101\d{10}$');
 
 
 -- ----------------------------------------------------------------
