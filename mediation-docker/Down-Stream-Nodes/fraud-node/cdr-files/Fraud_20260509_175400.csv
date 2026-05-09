@@ -1,4 +1,0 @@
-duration,vplmn,start_time,caller_id,receiver_id,file_id,service_id,rated_flag,hplmn,external_charges
-195,60202,2026-05-09 14:53:46,2010032116,2010024491,1,2,false,60201,7.53
-,60202,,,,3,,false,60201,15.05
-,60202,,,2010024738,2,,false,60201,0.10
