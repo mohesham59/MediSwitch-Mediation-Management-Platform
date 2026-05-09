@@ -1,9 +1,9 @@
 
 <style>
-#erd svg { width: 100%; height: auto; }
-.mermaid-label { font-family: var(--font-sans) !important; }
+#erd { padding: 1rem 0; }
+#erd svg { max-width: 100%; }
 </style>
-<div id="erd" style="padding: 1rem 0;"></div>
+<div id="erd"></div>
 <script type="module">
 import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -18,26 +18,9 @@ mermaid.initialize({
     fontFamily: '"Anthropic Sans", sans-serif',
     lineColor: dark ? '#9c9a92' : '#73726c',
     textColor: dark ? '#c2c0b6' : '#3d3d3a',
-    primaryColor: dark ? '#2a2a3e' : '#EEEDFE',
-    primaryBorderColor: dark ? '#534AB7' : '#534AB7',
-    primaryTextColor: dark ? '#c2c0b6' : '#26215C',
-    secondaryColor: dark ? '#1a2e28' : '#E1F5EE',
-    secondaryBorderColor: dark ? '#0F6E56' : '#0F6E56',
-    tertiaryColor: dark ? '#2e1f1a' : '#FAECE7',
-    tertiaryBorderColor: dark ? '#993C1D' : '#993C1D',
   },
 });
-
 const diagram = `erDiagram
-  users {
-    int id PK
-    varchar username
-    varchar password_hash
-    enum role
-    boolean is_active
-    timestamp created_at
-  }
-
   nodes {
     int id PK
     varchar name
@@ -48,97 +31,105 @@ const diagram = `erDiagram
     varchar username
     varchar password
     varchar remote_path
-    varchar archive_path
     boolean is_active
+    timestamp created_at
+    timestamp updated_at
   }
-
-  node_cdr_config {
-    int id PK
-    int node_id FK
-    enum cdr_type
-    enum file_format
-    varchar file_pattern
-    varchar decoder_class
-  }
-
-  cdr_field_mapping {
-    int id PK
-    int node_cdr_config_id FK
-    varchar source_field
-    varchar target_field
-    enum field_type
-    boolean is_required
-  }
-
-  cdr_filters {
-    int id PK
-    int node_cdr_config_id FK
-    varchar field_name
-    enum operator
-    varchar value
-    enum action
-  }
-
-  node_output_config {
-    int id PK
-    int node_id FK
-    enum output_format
-    varchar file_prefix
-    char delimiter
-  }
-
-  output_field_mapping {
-    int id PK
-    int node_output_config_id FK
-    varchar source_field
-    varchar target_field
-    int field_order
-    boolean is_required
-  }
-
-  mediation_rules {
+  mediation_roles {
     int id PK
     int source_node_id FK
     int destination_node_id FK
     boolean is_active
     timestamp created_at
   }
-
   cdr_files {
     int id PK
-    int source_node_id FK
+    int node_id FK
     varchar file_name
-    bigint file_size
+    varchar local_path
+    varchar archive_path
     enum status
+    int total_records
+    int valid_records
+    int filtered_records
+    text error_message
     timestamp downloaded_at
     timestamp processed_at
-    text error_message
+    timestamp uploaded_at
+    timestamp archived_at
   }
-
-  cdr_file_deliveries {
+  cdr_records {
+    bigint id PK
+    int file_id FK
+    varchar a_number
+    varchar b_number
+    varchar short_code
+    varchar record_type
+    datetime call_start_time
+    int call_duration
+    bigint data_volume
+    varchar imsi
+    varchar imei
+    varchar cell_id
+    varchar cause_for_term
+    text raw_data
+    boolean is_filtered
+    varchar filter_reason
+    timestamp created_at
+  }
+  upload_log {
     int id PK
     int cdr_file_id FK
-    int dest_node_id FK
+    int destination_node_id FK
     enum status
-    timestamp uploaded_at
+    int attempt_number
     text error_message
+    timestamp started_at
+    timestamp completed_at
+  }
+  filter_rules {
+    int id PK
+    int node_id FK
+    varchar rule_name
+    varchar rule_field
+    enum operator
+    varchar rule_value
+    enum action
+    boolean is_active
+    timestamp created_at
+  }
+  users {
+    int id PK
+    varchar username
+    varchar password
+    varchar full_name
+    varchar email
+    enum role
+    boolean is_active
+    timestamp last_login
+    timestamp created_at
+  }
+  audit_log {
+    bigint id PK
+    int user_id FK
+    varchar action
+    varchar entity
+    int entity_id
+    json old_value
+    json new_value
+    varchar ip_address
+    timestamp performed_at
   }
 
-  nodes ||--o| node_cdr_config : "has (upstream)"
-  nodes ||--o| node_output_config : "has (downstream)"
-  nodes ||--o{ cdr_files : "downloads"
-  nodes ||--o{ mediation_rules : "source"
-  nodes ||--o{ mediation_rules : "destination"
-  nodes ||--o{ cdr_file_deliveries : "receives"
-
-  node_cdr_config ||--o{ cdr_field_mapping : "defines fields"
-  node_cdr_config ||--o{ cdr_filters : "applies filters"
-
-  node_output_config ||--o{ output_field_mapping : "maps output"
-
-  cdr_files ||--o{ cdr_file_deliveries : "delivered via"
+  nodes ||--o{ mediation_roles : "source node"
+  nodes ||--o{ mediation_roles : "destination node"
+  nodes ||--o{ cdr_files : "downloads from"
+  nodes ||--o{ upload_log : "uploads to"
+  nodes ||--o{ filter_rules : "scoped to"
+  cdr_files ||--o{ cdr_records : "contains"
+  cdr_files ||--o{ upload_log : "tracked by"
+  users ||--o{ audit_log : "performs"
 `;
-
 const { svg } = await mermaid.render('erd-svg', diagram);
 document.getElementById('erd').innerHTML = svg;
 

@@ -1,315 +1,164 @@
--- ============================================================
---   MEDIATION SYSTEM - PostgreSQL Database Schema
--- ============================================================
+-- ================================================================
+--  Telecom Mediation System — Simplified Schema
+--  Database: PostgreSQL (Neon)
+-- ================================================================
 
 
--- ============================================================
--- ENUM TYPES - defined once, reused across tables
--- ============================================================
-
-CREATE TYPE user_role          AS ENUM ('admin', 'viewer');
-CREATE TYPE node_type          AS ENUM ('upstream', 'downstream');
-CREATE TYPE node_protocol      AS ENUM ('FTP', 'SCP', 'SFTP');
-CREATE TYPE cdr_type           AS ENUM ('voice', 'sms', 'data');
-CREATE TYPE cdr_file_format    AS ENUM ('ASN1', 'TEXT', 'IPFIX', 'CSV');
-CREATE TYPE output_format      AS ENUM ('CSV', 'JSON', 'XML', 'ASN1');
-CREATE TYPE field_type         AS ENUM ('string', 'integer', 'timestamp', 'bytes');
-CREATE TYPE filter_operator    AS ENUM ('=', '!=', '>', '<', '>=', '<=', 'IS NULL', 'IS NOT NULL');
-CREATE TYPE filter_action      AS ENUM ('exclude', 'include');
-CREATE TYPE cdr_file_status    AS ENUM ('downloaded', 'processing', 'processed', 'failed');
-CREATE TYPE delivery_status    AS ENUM ('pending', 'uploaded', 'failed');
-
-
--- ============================================================
--- FUNCTION - auto-update updated_at column on row change
--- ============================================================
-
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-
--- ============================================================
--- 1. USERS - System users for web application login
--- ============================================================
-
-CREATE TABLE users (
-    id            SERIAL PRIMARY KEY,
-    username      VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role          user_role NOT NULL DEFAULT 'viewer',
-    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-
--- ============================================================
--- 2. NODES - All network nodes (Upstream and Downstream)
--- ============================================================
-
+-- ----------------------------------------------------------------
+-- 1. NODES
+--    Every upstream (MSC, SMSC, PGW) and downstream
+--    (Billing, Fraud) container is one row.
+-- ----------------------------------------------------------------
 CREATE TABLE nodes (
-    id            SERIAL PRIMARY KEY,
-    name          VARCHAR(100) NOT NULL,
-    type          node_type NOT NULL,
-    protocol      node_protocol NOT NULL,
-    ip            INET NOT NULL,                      -- PostgreSQL native IP type (supports IPv4 & IPv6)
-    port          INTEGER NOT NULL DEFAULT 22
-                      CHECK (port BETWEEN 1 AND 65535),
-    username      VARCHAR(100) NOT NULL,
-    password      VARCHAR(255) NOT NULL,              -- stored encrypted
-    remote_path   VARCHAR(255),                       -- path on the remote server
-    archive_path  VARCHAR(255),                       -- local archive path after download
-    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id            SERIAL       PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL UNIQUE,
+    node_type     VARCHAR(20)  NOT NULL CHECK (node_type IN ('UPSTREAM', 'DOWNSTREAM')),
+    protocol      VARCHAR(10)  NOT NULL CHECK (protocol  IN ('SFTP', 'FTP', 'SCP', 'HTTP', 'HTTPS')),
+    ip            VARCHAR(100) NOT NULL,
+    port          INTEGER      NOT NULL,
+    username      VARCHAR(100),
+    password_hash VARCHAR(255),
+    remote_path   VARCHAR(500) NOT NULL DEFAULT '/',
+    cdr_format    VARCHAR(10)  CHECK (cdr_format IN ('voice', 'sms', 'data')),
+    is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
-CREATE TRIGGER trg_nodes_updated_at
-    BEFORE UPDATE ON nodes
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- Upstream nodes
+INSERT INTO nodes (name, node_type, protocol, ip, port, username, password_hash, remote_path, cdr_format) VALUES
+('MSC',  'UPSTREAM', 'SFTP', 'msc-node',  2221, 'msc',  'CHANGE_ME', '/cdr-files', 'voice'),
+('SMSC', 'UPSTREAM', 'SFTP', 'smsc-node', 2221, 'smsc', 'CHANGE_ME', '/cdr-files', 'sms'),
+('PGW',  'UPSTREAM', 'SFTP', 'pgw-node',  2221, 'pgw',  'CHANGE_ME', '/cdr-files', 'data');
 
-CREATE INDEX idx_nodes_type     ON nodes (type);
-CREATE INDEX idx_nodes_active   ON nodes (is_active);
-
-
--- ============================================================
--- 3. NODE_CDR_CONFIG - CDR configuration for each Upstream Node
--- ============================================================
-
-CREATE TABLE node_cdr_config (
-    id              SERIAL PRIMARY KEY,
-    node_id         INTEGER NOT NULL UNIQUE            -- each node has exactly one config
-                        REFERENCES nodes (id) ON DELETE CASCADE,
-    cdr_type        cdr_type NOT NULL,
-    file_format     cdr_file_format NOT NULL,
-    file_pattern    VARCHAR(100),                      -- e.g. '*.dat' or 'CDR_*.bin'
-    decoder_class   VARCHAR(100),                      -- name of the class responsible for decoding
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TRIGGER trg_node_cdr_config_updated_at
-    BEFORE UPDATE ON node_cdr_config
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- Downstream nodes
+INSERT INTO nodes (name, node_type, protocol, ip, port, username, password_hash, remote_path, cdr_format) VALUES
+('Billing', 'DOWNSTREAM', 'SFTP', 'billing-node', 2221, 'billing', 'CHANGE_ME', '/cdr-files', NULL),
+('Fraud',   'DOWNSTREAM', 'SFTP', 'fraud-node',   2221, 'fraud',   'CHANGE_ME', '/cdr-files', NULL);
 
 
--- ============================================================
--- 4. CDR_FIELD_MAPPING - Input field mapping for each CDR type
---    Tells the Mediation which fields to read from the ASN.1 file
--- ============================================================
-
-CREATE TABLE cdr_field_mapping (
-    id                  SERIAL PRIMARY KEY,
-    node_cdr_config_id  INTEGER NOT NULL
-                            REFERENCES node_cdr_config (id) ON DELETE CASCADE,
-    source_field        VARCHAR(100) NOT NULL,         -- field name in the original ASN.1
-    target_field        VARCHAR(100) NOT NULL,         -- unified field name inside Mediation
-    field_type          field_type NOT NULL,
-    is_required         BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_cdr_field_mapping_config ON cdr_field_mapping (node_cdr_config_id);
-
-/*
-Example:
-MSC Node:
-  source_field='seizure_time'   -> target_field='start_time'   (timestamp, required)
-  source_field='call_duration'  -> target_field='duration'     (integer,   required)
-  source_field='calling_number' -> target_field='msisdn'       (string,    required)
-  source_field='called_number'  -> target_field='called'       (string,    required)
-  source_field='cell_id'        -> target_field='cell_id'      (string,    optional)
-  source_field='imei'           -> target_field='imei'         (string,    optional)
-*/
-
-
--- ============================================================
--- 5. CDR_FILTERS - Filtering rules applied to CDR records
---    e.g. exclude Zero Duration, exclude Short Calls
--- ============================================================
-
-CREATE TABLE cdr_filters (
-    id                  SERIAL PRIMARY KEY,
-    node_cdr_config_id  INTEGER NOT NULL
-                            REFERENCES node_cdr_config (id) ON DELETE CASCADE,
-    field_name          VARCHAR(100) NOT NULL,         -- the field to apply the filter on
-    operator            filter_operator NOT NULL,
-    value               VARCHAR(255),                  -- the value to compare against
-    action              filter_action NOT NULL DEFAULT 'exclude',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_cdr_filters_config ON cdr_filters (node_cdr_config_id);
-
-/*
-Example:
-  field_name='duration', operator='=',       value='0', action='exclude'  -> remove Zero Duration records
-  field_name='duration', operator='<',       value='5', action='exclude'  -> remove Short Call records
-  field_name='msisdn',   operator='IS NULL',            action='exclude'  -> remove records with no MSISDN
-*/
-
-
--- ============================================================
--- 6. NODE_OUTPUT_CONFIG - Output configuration for each Downstream Node
---    Tells the Mediation how to format and deliver files to each Downstream
--- ============================================================
-
-CREATE TABLE node_output_config (
-    id              SERIAL PRIMARY KEY,
-    node_id         INTEGER NOT NULL UNIQUE            -- each downstream node has exactly one output config
-                        REFERENCES nodes (id) ON DELETE CASCADE,
-    output_format   output_format NOT NULL DEFAULT 'CSV',
-    file_prefix     VARCHAR(100),                      -- output filename prefix e.g. 'BILLING_CDR_'
-    delimiter       CHAR(1) NOT NULL DEFAULT ',',      -- column delimiter for CSV output
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TRIGGER trg_node_output_config_updated_at
-    BEFORE UPDATE ON node_output_config
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-
--- ============================================================
--- 7. OUTPUT_FIELD_MAPPING - Fields to be sent to each Downstream Node
---    Each Downstream receives a different set of fields
--- ============================================================
-
-CREATE TABLE output_field_mapping (
-    id                    SERIAL PRIMARY KEY,
-    node_output_config_id INTEGER NOT NULL
-                              REFERENCES node_output_config (id) ON DELETE CASCADE,
-    source_field          VARCHAR(100) NOT NULL,       -- unified field name inside Mediation
-    target_field          VARCHAR(100) NOT NULL,       -- field name in the output file sent to Downstream
-    field_order           INTEGER NOT NULL DEFAULT 0,  -- column order in the output CSV
-    is_required           BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_output_field_mapping_config ON output_field_mapping (node_output_config_id);
-
-/*
-Example:
-Billing Node Output:
-  source_field='msisdn'      -> target_field='msisdn'       (order=1, required)
-  source_field='called'      -> target_field='b_number'     (order=2, required)
-  source_field='start_time'  -> target_field='call_date'    (order=3, required)
-  source_field='duration'    -> target_field='duration_sec' (order=4, required)
-
-Fraud Node Output:
-  source_field='msisdn'      -> target_field='a_number'     (order=1, required)
-  source_field='called'      -> target_field='b_number'     (order=2, required)
-  source_field='start_time'  -> target_field='event_time'   (order=3, required)
-  source_field='duration'    -> target_field='duration'     (order=4, required)
-  source_field='imei'        -> target_field='device_id'    (order=5, optional)
-  source_field='cell_id'     -> target_field='location'     (order=6, optional)
-*/
-
-
--- ============================================================
--- 8. MEDIATION_RULES - Routing rules: which upstream sends to which downstream
--- ============================================================
-
+-- ----------------------------------------------------------------
+-- 2. MEDIATION_RULES
+--    Links one upstream node to one downstream node.
+--    Create multiple rows to fan one source to many destinations.
+-- ----------------------------------------------------------------
 CREATE TABLE mediation_rules (
-    id                    SERIAL PRIMARY KEY,
-    source_node_id        INTEGER NOT NULL              -- Upstream node
-                              REFERENCES nodes (id),
-    destination_node_id   INTEGER NOT NULL              -- Downstream node
-                              REFERENCES nodes (id),
-    is_active             BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CONSTRAINT uq_mediation_rule
-        UNIQUE (source_node_id, destination_node_id),  -- prevent duplicate rules
-
-    CONSTRAINT chk_different_nodes
-        CHECK (source_node_id <> destination_node_id)  -- a node cannot route to itself
+    id                   SERIAL  PRIMARY KEY,
+    source_node_id       INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    destination_node_id  INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE (source_node_id, destination_node_id)
 );
 
-CREATE INDEX idx_mediation_rules_source ON mediation_rules (source_node_id);
-CREATE INDEX idx_mediation_rules_dest   ON mediation_rules (destination_node_id);
-
-/*
-Example:
-MSC  -> Billing  (active)
-MSC  -> Fraud    (active)
-SMSC -> Billing  (active)
-PGW  -> Billing  (active)
-*/
+INSERT INTO mediation_rules (source_node_id, destination_node_id, is_active) VALUES
+(1, 4, TRUE),  -- MSC  -> Billing
+(1, 5, TRUE),  -- MSC  -> Fraud
+(2, 4, TRUE),  -- SMSC -> Billing
+(3, 4, TRUE),  -- PGW  -> Billing
+(3, 5, TRUE);  -- PGW  -> Fraud
 
 
--- ============================================================
--- 9. CDR_FILES - Tracks every CDR file downloaded from upstream nodes
--- ============================================================
-
-CREATE TABLE cdr_files (
-    id              SERIAL PRIMARY KEY,
-    source_node_id  INTEGER NOT NULL
-                        REFERENCES nodes (id),
-    file_name       VARCHAR(255) NOT NULL,
-    file_size       BIGINT CHECK (file_size >= 0),     -- size in bytes
-    status          cdr_file_status NOT NULL DEFAULT 'downloaded',
-    downloaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    processed_at    TIMESTAMPTZ,
-    error_message   TEXT
+-- ----------------------------------------------------------------
+-- 3. FILTRATION_RULES
+--    Each row is one filter predicate attached to a mediation rule.
+--    A CDR that matches ANY active rule is dropped (not forwarded).
+--
+--    rule_type values:
+--      FIELD_EQUALS     — drop if field == value
+--      FIELD_LESS_THAN  — drop if field < value  (numeric)
+--      BLOCKED_NUMBER   — drop if field is in blocked_numbers table
+--      REGEX_MATCH      — drop if field matches regex in value
+-- ----------------------------------------------------------------
+CREATE TABLE filtration_rules (
+    id                SERIAL       PRIMARY KEY,
+    mediation_rule_id INTEGER      NOT NULL REFERENCES mediation_rules(id) ON DELETE CASCADE,
+    rule_type         VARCHAR(30)  NOT NULL CHECK (rule_type IN (
+                          'FIELD_EQUALS',
+                          'FIELD_LESS_THAN',
+                          'BLOCKED_NUMBER',
+                          'REGEX_MATCH'
+                      )),
+    field_name        VARCHAR(100) NOT NULL,
+    value             VARCHAR(500),
+    is_active         BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
-CREATE INDEX idx_cdr_files_node     ON cdr_files (source_node_id);
-CREATE INDEX idx_cdr_files_status   ON cdr_files (status);
-CREATE INDEX idx_cdr_files_dl_at    ON cdr_files (downloaded_at DESC);
+-- ── Rule 1: MSC -> Billing ───────────────────────────────────────
+-- Drop zero-duration calls (no billable event)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(1, 'FIELD_EQUALS', 'duration', '0');
+
+-- Drop calls to emergency / short-code numbers
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(1, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- ── Rule 2: MSC -> Fraud ─────────────────────────────────────────
+-- Drop zero-duration calls (no fraud signal in empty calls)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(2, 'FIELD_EQUALS', 'duration', '0');
+
+-- Drop calls to emergency numbers (not fraud targets)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(2, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- ── Rule 3: SMSC -> Billing ──────────────────────────────────────
+-- Drop messages sent to emergency / short-code numbers
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(3, 'BLOCKED_NUMBER', 'receiver_id', NULL);
+
+-- Drop messages with zero length (empty / system messages)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(3, 'FIELD_EQUALS', 'message_length', '0');
+
+-- ── Rule 4: PGW -> Billing ───────────────────────────────────────
+-- Drop sessions with zero data usage (not billable)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(4, 'FIELD_EQUALS', 'data_usage_mb', '0');
+
+-- Drop sessions shorter than 1 second (handshake-only, not billable)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(4, 'FIELD_LESS_THAN', 'session_duration', '1');
+
+-- ── Rule 5: PGW -> Fraud ─────────────────────────────────────────
+-- Drop sessions with zero data usage (no fraud signal)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(5, 'FIELD_EQUALS', 'data_usage_mb', '0');
+
+-- Flag suspiciously large sessions for fraud (over 10000 MB) using regex on string value.
+-- Note: for numeric range checks prefer FIELD_LESS_THAN; this shows REGEX_MATCH usage.
+-- Drop IMSIs matching test/internal patterns (e.g. 00101xxxxxxxxx)
+INSERT INTO filtration_rules (mediation_rule_id, rule_type, field_name, value) VALUES
+(5, 'REGEX_MATCH', 'imsi', '^00101\d{10}$');
 
 
--- ============================================================
--- 10. CDR_FILE_DELIVERIES - Tracks delivery of each file to each downstream node
--- ============================================================
-
-CREATE TABLE cdr_file_deliveries (
-    id              SERIAL PRIMARY KEY,
-    cdr_file_id     INTEGER NOT NULL
-                        REFERENCES cdr_files (id),
-    dest_node_id    INTEGER NOT NULL
-                        REFERENCES nodes (id),
-    status          delivery_status NOT NULL DEFAULT 'pending',
-    uploaded_at     TIMESTAMPTZ,
-    error_message   TEXT
+-- ----------------------------------------------------------------
+-- 4. BLOCKED_NUMBERS
+--    Emergency / short-code numbers checked by BLOCKED_NUMBER rules.
+-- ----------------------------------------------------------------
+CREATE TABLE blocked_numbers (
+    id          SERIAL      PRIMARY KEY,
+    number      VARCHAR(20) NOT NULL UNIQUE,
+    description VARCHAR(200)
 );
 
-CREATE INDEX idx_deliveries_file    ON cdr_file_deliveries (cdr_file_id);
-CREATE INDEX idx_deliveries_node    ON cdr_file_deliveries (dest_node_id);
-CREATE INDEX idx_deliveries_status  ON cdr_file_deliveries (status);
+INSERT INTO blocked_numbers (number, description) VALUES
+('911',  'US/Canada emergency'),
+('112',  'International emergency'),
+('999',  'UK emergency'),
+('15',   'Egypt police'),
+('16',   'Egypt ambulance'),
+('19',   'Egypt fire'),
+('122',  'Egypt general emergency');
 
 
--- ============================================================
--- RELATIONSHIPS SUMMARY
--- ============================================================
-/*
+-- ----------------------------------------------------------------
+-- 5. ADMINS
+--    Accounts for the servlet-based admin web application.
+-- ----------------------------------------------------------------
+CREATE TABLE admins (
+    id            SERIAL       PRIMARY KEY,
+    username      VARCHAR(50)  NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active     BOOLEAN      NOT NULL DEFAULT TRUE
+);
 
-nodes (upstream)
-  ├── node_cdr_config (1-to-1)
-  │     ├── cdr_field_mapping (1-to-many)   <- defines which fields are read from ASN.1
-  │     └── cdr_filters (1-to-many)          <- defines which records are excluded
-  └── cdr_files (1-to-many)
-        └── cdr_file_deliveries (1-to-many)
-
-nodes (downstream)
-  ├── node_output_config (1-to-1)
-  │     └── output_field_mapping (1-to-many) <- defines which fields are sent to each downstream
-  └── cdr_file_deliveries (1-to-many)
-
-mediation_rules
-  ├── source_node_id      -> nodes (upstream)
-  └── destination_node_id -> nodes (downstream)
-
-users
-  └── web application authentication
-
-*/
+INSERT INTO admins (username, password_hash) VALUES
+('admin', 'admin_123');
