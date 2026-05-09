@@ -1,0 +1,10 @@
+file_id=1
+caller_id=2010024899
+receiver_id=2010012700
+start_time=2026-05-09 14:26:17
+duration=274
+service_id=2
+hplmn=60201
+vplmn=60202
+external_charges=7.53
+rated_flag=false

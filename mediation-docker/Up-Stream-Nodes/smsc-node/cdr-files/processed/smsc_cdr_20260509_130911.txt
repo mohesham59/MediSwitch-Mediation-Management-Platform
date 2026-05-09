@@ -1,0 +1,10 @@
+file_id=2
+sender_id=2010031007
+receiver_id=2010003781
+timestamp=2026-05-09 13:09:11
+message_length=122
+service_type=SMS
+hplmn=60201
+vplmn=60202
+external_charges=0.10
+rated_flag=false

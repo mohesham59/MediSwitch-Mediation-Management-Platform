@@ -1,0 +1,10 @@
+file_id=3
+imsi=60201242992584
+session_start=2026-05-09 14:28:17
+session_duration=292
+data_usage_mb=376.35
+apn=internet
+hplmn=60201
+vplmn=60202
+external_charges=15.05
+rated_flag=false
