@@ -1,7 +1,7 @@
 file_id=3
-imsi=60201411211794
-session_start=2026-05-07 13:10:46
-session_duration=564
+imsi=6020120297961
+session_start=2026-05-09 17:49:16
+session_duration=311
 data_usage_mb=376.35
 apn=internet
 hplmn=60201
