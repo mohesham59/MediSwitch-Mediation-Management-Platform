@@ -1,0 +1,22 @@
+    </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+<script>
+// Auto-dismiss alerts after 4s
+document.querySelectorAll('.alert').forEach(el => {
+    setTimeout(() => {
+        el.style.transition = 'opacity 0.4s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 400);
+    }, 4000);
+});
+
+// Confirm before deletes
+document.querySelectorAll('[data-confirm]').forEach(el => {
+    el.addEventListener('click', e => {
+        if (!confirm(el.dataset.confirm)) e.preventDefault();
+    });
+});
+</script>
+</body>
+</html>
