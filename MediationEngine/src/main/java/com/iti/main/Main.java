@@ -105,10 +105,9 @@ public class Main {
 
         String path = file.getAbsolutePath().toLowerCase();
 
-        if (path.contains("msc-node")) return "MSC";
-        if (path.contains("smsc-node")) return "SMSC";
-        if (path.contains("pgw-node")) return "PGW";
-
+        if (path.contains("smsc-node")) return "SMSC"; 
+        if (path.contains("msc-node"))  return "MSC";
+        if (path.contains("pgw-node"))  return "PGW";
         return "UNKNOWN";
-    }
+        }
 }
