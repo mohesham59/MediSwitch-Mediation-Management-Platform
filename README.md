@@ -1,266 +1,311 @@
+# 📡 MediSwitch — Mediation Management Platform
 
-# 🔄 Mediation System — Full Workflow & Database Architecture
-
-This repository contains the database schema, workflow logic, and architecture for the Telecom Mediation System. The system is responsible for fetching raw CDR (Call Detail Record) files from Upstream nodes, processing and filtering them, and securely uploading them to Downstream nodes for billing and fraud analysis.
-
----
-
-## 🗺️ High-Level Architecture
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                    MEDIATION SYSTEM FLOW                     │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│  [Upstream Nodes]  →  [Download]  →  [Process]  →  [Upload]  │
-│   MSC/SMSC/PGW          ↓                ↓             ↓     │
-│   (FTP/SFTP/SCP)    cdr_files      cdr_records    upload_log │
-│                                ↓                             │
-│                          filter_rules                        │
-│                                                              │
-│                    →  [Downstream Nodes]                     │
-│                        Billing / Fraud                       │
-└──────────────────────────────────────────────────────────────┘
-```
+A containerized telecom mediation system that collects CDR (Call Detail Record) files from upstream network nodes, processes and filters them according to configurable rules stored in a PostgreSQL database, and routes the output as CSV files to downstream nodes.
 
 ---
 
-## 📋 Database Tables Breakdown
+## 📌 Table of Contents
 
-### 🟦 Table 1: `nodes`
-> **Purpose:** The core configuration table. It stores all servers/nodes involved in the mediation process.
-```text
-┌─────────────────────────────────────────────┐
-│ id  │ name    │ type       │ protocol │ ip  │
-├─────┼─────────┼────────────┼──────────┼─────┤
-│  1  │ MSC-01  │ Upstream   │ SFTP     │ ... │
-│  2  │ SMSC-01 │ Upstream   │ FTP      │ ... │
-│  3  │ PGW-01  │ Upstream   │ SCP      │ ... │
-│  4  │ Billing │ Downstream │ SFTP     │ ... │
-│  5  │ Fraud   │ Downstream │ FTP      │ ... │
-└─────────────────────────────────────────────┘
-```
-* **Stored Data:** Server name, Node type (`Upstream`/`Downstream`), Protocol (`FTP`/`SFTP`/`SCP`), IP/Port, encrypted credentials, and remote path.
-* **Trigger:** Written when the Admin adds a new Node via the Web Application.
-
-### 🟦 Table 2: `mediation_roles`
-> **Purpose:** Defines the routing rules. It dictates which Upstream node sends data to which Downstream node.
-```text
-┌────────────────────────────────────────────────┐
-│ id │ source_node_id │ destination_node_id      │
-├────┼────────────────┼──────────────────────────┤
-│  1 │   1 (MSC-01)   │  4 (Billing)             │
-│  2 │   1 (MSC-01)   │  5 (Fraud)               │
-│  3 │   2 (SMSC-01)  │  4 (Billing)             │
-└────────────────────────────────────────────────┘
-```
-* **Stored Data:** `source_node_id` (Upstream), `destination_node_id` (Downstream), and `is_active` status.
-* **Trigger:** Written when the Admin maps an Upstream to a Downstream via the Web App.
-
-### 🟦 Table 3: `cdr_files`
-> **Purpose:** Tracks the complete lifecycle of every single CDR file from download to archiving.
-```text
-Lifecycle Lifecycle:
-┌────────────┐   ┌────────────┐   ┌───────────┐   ┌──────────┐   ┌──────────┐
-│ DOWNLOADED │ → │ PROCESSING │ → │ PROCESSED │ → │ UPLOADED │ → │ ARCHIVED │
-└────────────┘   └────────────┘   └───────────┘   └──────────┘   └──────────┘
-                                                                       ↓
-                                                                    FAILED ❌
-                                                                (At any stage)
-```
-* **Stored Data:** File name, local storage path, current status, record counts (Total/Valid/Filtered), timestamps, and error messages (if any).
-* **Trigger:** Inserted the moment the Mediation engine downloads a new file from an Upstream Node.
-
-### 🟦 Table 4: `cdr_records`
-> **Purpose:** Stores individual parsed records extracted from the raw CDR files.
-```text
-MSC_20240101.asn  (10,000 records)
-        ↓ Parse & Decode ASN.1
-┌──────────────────────────────────────────────────────────────────┐
-│ id  │ file_id │ a_number  │ b_number  │ duration │ is_filtered   │
-├─────┼─────────┼───────────┼───────────┼──────────┼───────────────┤
-│   1 │    1    │ 201001234 │ 201005678 │   120    │ FALSE (✅)    │
-│   2 │    1    │ 201001111 │ 201002222 │     0    │ TRUE  (❌)    │
-│   3 │    1    │ 201003333 │ 201004444 │     2    │ TRUE  (❌)    │
-│   4 │    1    │ 201005555 │ 201006666 │   300    │ FALSE (✅)    │
-└──────────────────────────────────────────────────────────────────┘
-```
-* **Stored Data:** A-Number, B-Number, call duration (seconds), CDR type (Voice, SMS, Data), IMSI, IMEI, Cell ID, filter status (`is_filtered`), and filter reason.
-* **Trigger:** Inserted during the `PROCESSING` stage after decoding the ASN.1 file.
-
-### 🟦 Table 5: `upload_log`
-> **Purpose:** Logs every single attempt to upload a processed file to a Downstream Node.
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ id │ cdr_file_id │ destination_node_id │ status  │ attempt  │
-├────┼─────────────┼─────────────────────┼─────────┼──────────┤
-│  1 │      1      │     4 (Billing)     │ SUCCESS │    1     │
-│  2 │      1      │     5 (Fraud)       │ FAILED  │    3     │
-│  3 │      2      │     4 (Billing)     │ PENDING │    0     │
-└─────────────────────────────────────────────────────────────┘
-```
-* **Stored Data:** Target File ID, Destination Node ID, Upload Status, Attempt Counter (for Retry Logic), and error trace.
-* **Trigger:** Written when the Mediation engine attempts to push a file downstream.
-
-### 🟦 Table 6: `filter_rules`
-> **Purpose:** Stores dynamic filtering criteria applied to individual CDR records.
-```text
-┌────────────────────────────────────────────────────────────────────────────┐
-│ id │node_id│ rule_name          │ field         │ operator  │ value │action│
-├────┼───────┼────────────────────┼───────────────┼───────────┼───────┼──────┤
-│  1 │ NULL  │ FILTER_ZERO_DUR    │ call_duration │ EQUALS    │   0   │ DROP │
-│  2 │ NULL  │ FILTER_SHORT_CALL  │ call_duration │ LESS_THAN │   5   │ DROP │
-│  3 │   1   │ FILTER_NULL_ANUM   │ a_number      │ IS_NULL   │  NULL │ DROP │
-└────────────────────────────────────────────────────────────────────────────┘
-* Note: node_id = NULL means the rule applies globally to all Nodes.
-```
-* **Stored Data:** Rule name, target field, operator (e.g., EQUALS, LESS_THAN), comparison value, and required action (`DROP` or `FLAG`).
-* **Trigger:** Written when the Admin creates a new filtering rule via the Web App.
-
-### 🟦 Table 7: `users`
-> **Purpose:** Manages Web Application user accounts and RBAC (Role-Based Access Control).
-
-| id | username | role     | Permissions |
-|----|----------|----------|-------------|
-| 1  | admin    | ADMIN    | Full System Access (CRUD) |
-| 2  | ops_user | OPERATOR | View logs, trigger manual execution |
-| 3  | viewer1  | VIEWER   | Read-only access |
-
-* **Trigger:** Written when the Admin creates a new user profile.
-
-### 🟦 Table 8: `audit_log`
-> **Purpose:** System-wide audit trail recording user and system actions for accountability.
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ id │ user_id │ action        │ entity │ old_value     │ new_value    │
-├────┼─────────┼───────────────┼────────┼───────────────┼──────────────┤
-│  1 │    1    │ CREATE_NODE   │ nodes  │ NULL          │ {MSC-01 ...} │
-│  2 │    1    │ UPDATE_NODE   │ nodes  │ {ip: 1.1.1.1} │ {ip:2.2.2.2} │
-│  3 │ NULL    │ PROCESS_FILE  │ files  │ DOWNLOADED    │ PROCESSED    │
-└──────────────────────────────────────────────────────────────────────┘
-```
-* **Trigger:** Automatically generated by the system upon any background process or user interaction.
+- [Architecture Overview](#architecture-overview)
+- [Project Structure](#project-structure)
+- [Components](#components)
+  - [Upstream Generators](#upstream-generators)
+  - [Mediation Engine](#mediation-engine)
+  - [Downstream Watchers](#downstream-watchers)
+  - [Admin Web Application](#admin-web-application)
+- [Database Schema](#database-schema)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Build & Run](#build--run)
+- [Configuration](#configuration)
+- [Known Issues & Fixes](#known-issues--fixes)
 
 ---
 
-## 🔄 Step-by-Step System Workflow
-```text
-╔══════════════════════════════════════════════════════════════════╗
-║                    STEP 1 — CONFIGURATION                        ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Admin logs into the Web App                                     ║
-║     ↓                                                            ║
-║  Adds Nodes (MSC, SMSC, PGW, Billing, Fraud)                     ║
-║     ↓ Inserted into ► nodes table                                ║
-║  Links Upstream to Downstream targets                            ║
-║     ↓ Inserted into ► mediation_roles table                      ║
-║  Defines Filter Rules (Zero Duration, Short Calls)               ║
-║     ↓ Inserted into ► filter_rules table                         ║
-║                                                                  ║
-╠══════════════════════════════════════════════════════════════════╣
-║                  STEP 2 — DOWNLOAD CDR FILES                     ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Scheduler triggers at configured intervals (e.g., 15 mins)      ║
-║     ↓                                                            ║
-║  Fetches active Upstream Nodes from [nodes] table                ║
-║     ↓                                                            ║
-║  Connects to each Node via FTP / SFTP / SCP                      ║
-║     ↓                                                            ║
-║  Downloads new files to local temporary storage                  ║
-║     ↓                                                            ║
-║  Inserts record into ► cdr_files table                           ║
-║     status = 'DOWNLOADED'                                        ║
-║                                                                  ║
-╠══════════════════════════════════════════════════════════════════╣
-║                  STEP 3 — PROCESS CDR FILE                       ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Fetches files where status = 'DOWNLOADED'                       ║
-║     ↓                                                            ║
-║  UPDATE ► cdr_files → status = 'PROCESSING'                      ║
-║     ↓                                                            ║
-║  ① Decode ASN.1 → Convert Binary format to Readable format       ║
-║     ↓                                                            ║
-║  ② Parse Data → Iterate through every call record                ║
-║     ↓ Insert into ► cdr_records table                            ║
-║     ↓                                                            ║
-║  ③ Apply Rules → Fetch active rules from [filter_rules]          ║
-║     If call_duration == 0 → is_filtered = TRUE                   ║
-║     If call_duration < 5  → is_filtered = TRUE                   ║
-║     ↓ UPDATE record inside ► cdr_records table                   ║
-║     ↓                                                            ║
-║  ④ Generate CSV → Convert valid records to normalized CSV        ║
-║     ↓                                                            ║
-║  UPDATE ► cdr_files stats:                                       ║
-║     status           = 'PROCESSED'                               ║
-║     total_records    = 10000                                     ║
-║     valid_records    = 9800                                      ║
-║     filtered_records = 200                                       ║
-║                                                                  ║
-╠══════════════════════════════════════════════════════════════════╣
-║                 STEP 4 — UPLOAD TO DOWNSTREAM                    ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Fetch mapping rules from [mediation_roles] for the Source Node  ║
-║     ↓                                                            ║
-║  For each mapped Downstream Node:                                ║
-║     Insert into ► upload_log → status = 'PENDING'                ║
-║     ↓                                                            ║
-║     Connect to Downstream Node (FTP/SFTP/SCP)                    ║
-║     Push the processed CSV File                                  ║
-║     ↓                                                            ║
-║     If SUCCESS:                                                  ║
-║       UPDATE ► upload_log → status = 'SUCCESS'                   ║
-║     If FAILED:                                                   ║
-║       UPDATE ► upload_log → status = 'FAILED', increment attempt ║
-║       Queue for Retry Logic                                      ║
-║     ↓                                                            ║
-║  When ALL target downstream uploads succeed:                     ║
-║     UPDATE ► cdr_files → status = 'UPLOADED'                     ║
-║                                                                  ║
-╠══════════════════════════════════════════════════════════════════╣
-║                       STEP 5 — ARCHIVE                           ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Move original raw file to secure Archive Directory              ║
-║     ↓                                                            ║
-║  UPDATE ► cdr_files                                              ║
-║     status       = 'ARCHIVED'                                    ║
-║     archive_path = '/archive/2024/01/MSC_...'                    ║
-║     archived_at  = NOW()                                         ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
+## 🏗️ Architecture Overview
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ MSC Generator│    │SMSC Generator│    │ PGW Generator│
+│  (voice CDR) │    │  (sms CDR)   │    │ (data CDR)   │
+└──────┬───────┘    └───────┬──────┘    └───────┬──────┘
+       │                    │                   │
+       └────────────────────┼───────────────────┘
+                            │  .txt CDR files
+                            ▼
+                   ┌───────────────────┐
+                   │  Mediation Engine │
+                   │  (Java / Maven)   │
+                   │                   │
+                   │  1. Fetch         │
+                   │  2. Parse         │
+                   │  3. Filter (DB)   │
+                   │  4. Route  (DB)   │
+                   │  5. Write CSV     │
+                   └────────┬──────────┘
+                            │  .csv CDR files
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+      ┌───────────┐  ┌───────────┐  ┌───────────┐
+      │  Billing  │  │  Charging │  │   Fraud   │
+      │  Watcher  │  │  Watcher  │  │  Watcher  │
+      └───────────┘  └───────────┘  └───────────┘
+```
+
+All components run as Docker containers and communicate through shared volume mounts.
+
+---
+
+## 📁 Project Structure
+
+```
+MediSwitch-Mediation-Management-Platform/
+├── Database/
+│   ├── mediation_schema.sql       # Full PostgreSQL schema + seed data
+│   └── mediation_system_erd.html  # ERD diagram
+│
+├── mediation-docker/
+│   ├── docker-compose.yml
+│   ├── generator/                 # Upstream CDR file generators (Bash)
+│   │   ├── Dockerfile
+│   │   ├── generator.sh
+│   │   └── configs/
+│   │       ├── msc.conf
+│   │       ├── smsc.conf
+│   │       └── pgw.conf
+│   ├── Up-Stream-Nodes/           # Shared volumes for upstream CDR files
+│   │   ├── msc-node/cdr-files/
+│   │   ├── smsc-node/cdr-files/
+│   │   └── pgw-node/cdr-files/
+│   ├── Down-Stream-Nodes/         # Downstream watchers (Bash)
+│   │   ├── Dockerfile
+│   │   ├── watcher.sh
+│   │   ├── configs/
+│   │   │   ├── billing.conf
+│   │   │   ├── charging.conf
+│   │   │   └── fraud.conf
+│   │   ├── billing-node/cdr-files/
+│   │   ├── charging-node/cdr-files/
+│   │   └── fraud-node/cdr-files/
+│
+├── MediationEngine/               # Core Java processing engine (Maven)
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/main/java/com/iti/
+│       ├── main/Main.java
+│       ├── fetcher/FileFetcher.java
+│       ├── parser/CDRParser.java
+│       ├── filter/FilterService.java
+│       ├── router/RouterService.java
+│       ├── csv/CSVBuilder.java
+│       ├── model/CDRRecord.java
+│       ├── database/DBConnection.java
+│       └── util/FileUtil.java
+│
+└── mediation-webapp/              # Admin web application (Java Servlets)
+    ├── Dockerfile
+    ├── pom.xml
+    └── src/main/
+        ├── java/com/mediation/web/
+        │   ├── servlet/
+        │   ├── repository/
+        │   ├── model/
+        │   ├── filter/
+        │   └── config/
+        └── webapp/WEB-INF/views/
 ```
 
 ---
 
-## 📊 Quick Summary Table
+## 🧠 Components
 
-| Table | Primary Data | Trigger Event |
-|-------|--------------|---------------|
-| `nodes` | Network Servers (MSC, Billing, etc.) | Admin creates a new node profile |
-| `mediation_roles` | Routing Map (Source → Destination) | Admin links upstream to downstream |
-| `filter_rules` | Logical rules for dropping/flagging | Admin configures business logic |
-| `cdr_files` | File metadata & processing state | System downloads a new file |
-| `cdr_records` | Granular call/data records | System parses a downloaded file |
-| `upload_log` | Upload attempts and retry states | System attempts file delivery |
-| `users` | Admin & Operator credentials | Admin registers a new system user |
-| `audit_log` | Historical log of all events | Any automated or manual system action |
+### Upstream Generators
+
+Three Bash-based containers that simulate network nodes producing CDR files every 10 seconds.
+
+| Container | Config | CDR Format | Output Directory |
+|-----------|--------|------------|-----------------|
+| `msc-generator` | `msc.conf` | voice | `Up-Stream-Nodes/msc-node/cdr-files/` |
+| `smsc-generator` | `smsc.conf` | sms | `Up-Stream-Nodes/smsc-node/cdr-files/` |
+| `pgw-generator` | `pgw.conf` | data | `Up-Stream-Nodes/pgw-node/cdr-files/` |
+
+**Voice CDR fields:** `file_id`, `caller_id`, `receiver_id`, `start_time`, `duration`, `service_id`, `hplmn`, `vplmn`, `external_charges`, `rated_flag`
+
+**SMS CDR fields:** `file_id`, `sender_id`, `receiver_id`, `timestamp`, `message_length`, `service_type`, `hplmn`, `vplmn`, `external_charges`, `rated_flag`
+
+**Data CDR fields:** `file_id`, `imsi`, `session_start`, `session_duration`, `data_usage_mb`, `apn`, `hplmn`, `vplmn`, `external_charges`, `rated_flag`
 
 ---
 
-## 🔗 Entity-Relationship (ER) Mapping
-```text
-users
-  └──► audit_log (Logs every user action)
+### Mediation Engine
 
-nodes
-  ├──► mediation_roles (Acts as source or destination)
-  ├──► cdr_files (Files originate from specific upstream nodes)
-  │       └──► cdr_records (Records belong to specific files)
-  │       └──► upload_log (Uploads are tied to specific files)
-  └──► filter_rules (Rules can be tied to specific nodes)
+The core Java application (`MediationEngine/`). It runs in a continuous loop (every 10 seconds) and performs the following pipeline on every unprocessed CDR file:
+
+1. **Fetch** — scans all upstream node directories for `.txt` files not yet in the `processed/` subfolder.
+2. **Parse** — reads the key=value CDR format and maps fields into a `CDRRecord` object. Logs any missing optional fields with a `⚠️` warning but continues processing.
+3. **Filter** — queries the `filtration_rules` table in PostgreSQL. If any active rule matches the record, the file is dropped and moved to `processed/`.
+4. **Route** — queries the `mediation_rules` table to determine which downstream nodes should receive the record.
+5. **Write CSV** — appends the record to a timestamped `.csv` file in the appropriate downstream directory.
+6. **Move** — moves the original `.txt` file to the `processed/` subfolder to prevent reprocessing.
+
+**Environment variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `UPSTREAM_BASE_PATH` | Root path for upstream node volumes | `/data/upstream` |
+| `DOWNSTREAM_BASE_PATH` | Root path for downstream node volumes | `/data/downstream` |
+| `DB_URL` | PostgreSQL JDBC URL | — |
+| `DB_USER` | Database username | — |
+| `DB_PASSWORD` | Database password | — |
+
+**Output CSV format:**
+```
+timestamp,source,destination,data
+20260515_161225,PGW,billing,vplmn=60202;data_usage_mb=376.35;...
 ```
 
+---
+
+### Downstream Watchers
+
+Three Bash-based containers that monitor their respective directories and log every new CSV file received.
+
+| Container | Config | Watches |
+|-----------|--------|---------|
+| `billing-watcher` | `billing.conf` | `Down-Stream-Nodes/billing-node/cdr-files/` |
+| `charging-watcher` | `charging.conf` | `Down-Stream-Nodes/charging-node/cdr-files/` |
+| `fraud-watcher` | `fraud.conf` | `Down-Stream-Nodes/fraud-node/cdr-files/` |
+
+---
+
+### Admin Web Application
+
+A Java Servlet-based web application (`mediation-webapp/`) for managing the system configuration through a browser UI.
+
+**Features:**
+- Admin account management
+- Node management (upstream & downstream)
+- Mediation rule configuration (source → destination routing)
+- Filtration rule management (field-based, regex, blocked numbers)
+- Blocked number list management
+- Dashboard
+
+---
+
+## 🗄️ Database Schema
+
+The system uses **PostgreSQL** with 5 tables:
+
+| Table | Purpose |
+|-------|---------|
+| `nodes` | All upstream and downstream nodes |
+| `mediation_rules` | Routing rules linking a source node to a destination node |
+| `filtration_rules` | Filter predicates applied per mediation rule |
+| `blocked_numbers` | Emergency/short-code numbers to drop |
+| `admins` | Admin web application accounts |
+
+**Supported filtration rule types:**
+
+| Type | Behavior |
+|------|----------|
+| `FIELD_EQUALS` | Drop if field == value |
+| `FIELD_LESS_THAN` | Drop if field < value (numeric) |
+| `BLOCKED_NUMBER` | Drop if field value exists in `blocked_numbers` table |
+| `REGEX_MATCH` | Drop if field value matches the given regex |
+
+To initialize the database, run:
+```bash
+psql -U <user> -d <database> -f Database/mediation_schema.sql
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Docker & Docker Compose
+- A running PostgreSQL instance (e.g. [Neon](https://neon.tech)) with the schema applied
+- Java 17+ and Maven 3.9+ (only needed for local builds outside Docker)
+
+### Build & Run
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd MediSwitch-Mediation-Management-Platform/mediation-docker
+
+# Build all images
+docker compose build
+
+# Start all containers
+docker compose up
+```
+
+To run in the background:
+```bash
+docker compose up -d
+docker compose logs -f mediation-engine
+```
+
+To stop:
+```bash
+docker compose down
+```
+
+---
+
+## ⚙️ Configuration
+
+### Generator config example (`msc.conf`)
+```bash
+node=msc
+format=voice
+output=/data/msc-node/cdr-files
+```
+
+### Watcher config example (`billing.conf`)
+```bash
+node=billing
+input=/data/billing-node/cdr-files
+```
+
+### Database connection
+
+Set the following environment variables in `docker-compose.yml` under the `mediation-engine` service:
+
+```yaml
+environment:
+  UPSTREAM_BASE_PATH: /data/upstream
+  DOWNSTREAM_BASE_PATH: /data/downstream
+  DB_URL: jdbc:postgresql://<host>/<database>
+  DB_USER: <username>
+  DB_PASSWORD: <password>
+```
+
+## 📌 Operational Notes
+```
+- All CDR data is synthetic and generated for simulation purposes only
+
+- System is optimized for batch file-based processing scenarios
+
+- Designed to mimic telecom mediation platforms used in production environments
+
+- Processing interval is configurable (default: 10 seconds)
+```
+
+## 👤 Authors
+
+**Mohamed Hesham**  
+GitHub: [@mohesham59](https://github.com/mohesham59)
+
+**Ahmed Omar**  
+GitHub: [A7med3mar4](https://github.com/A7med3mar4)
+
+**Ali Omran**  
+GitHub: [@aliomran10](https://github.com/aliomran10)
+
+## 📜 License
+```
+This project is intended for educational and simulation purposes only.
 ```
