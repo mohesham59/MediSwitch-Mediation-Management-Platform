@@ -9,18 +9,21 @@ public class AppContextListener implements ServletContextListener {
     @Override
     public void contextInitialized(ServletContextEvent sce) {
         ServletContext ctx = sce.getServletContext();
-        String url  = ctx.getInitParameter("db.url");
-        String user = ctx.getInitParameter("db.username");
-        String pass = ctx.getInitParameter("db.password");
+
+        // Environment variables take priority (Render / Docker),
+        // fall back to web.xml context-params for local Tomcat.
+        String url = getConfig("DB_URL", "db.url", ctx);
+        String user = getConfig("DB_USERNAME", "db.username", ctx);
+        String pass = getConfig("DB_PASSWORD", "db.password", ctx);
+
+        ctx.log("[MediFlow] Connecting to DB: " + url + " as " + user);
 
         try {
             DatabaseConfig.init(url, user, pass);
-            ctx.log("[MediFlow] Database pool initialised successfully.");
+            ctx.log("[MediFlow] DB pool initialised OK.");
         } catch (Exception e) {
-            // Log the error but do NOT re-throw — a startup crash causes Tomcat
-            // to mark the entire app as failed (404 on every URL).
-            ctx.log("[MediFlow] WARNING: Database pool failed to initialise: " + e.getMessage()
-                    + " — Fix db.url/username/password in web.xml and redeploy.");
+            ctx.log("[MediFlow] ERROR — DB init failed: " + e.getMessage(), e);
+            ctx.setAttribute("dbError", e.getMessage());
         }
     }
 
@@ -28,6 +31,15 @@ public class AppContextListener implements ServletContextListener {
     public void contextDestroyed(ServletContextEvent sce) {
         try {
             DatabaseConfig.close();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String getConfig(String envKey, String paramKey, ServletContext ctx) {
+        String envVal = System.getenv(envKey);
+        if (envVal != null && !envVal.isBlank()) {
+            return envVal;
+        }
+        return ctx.getInitParameter(paramKey);
     }
 }
