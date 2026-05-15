@@ -87,3 +87,14 @@ services:
     volumes:
       - ./Down-Stream-Nodes/fraud-node/cdr-files:/data/fraud-node/cdr-files
     restart: unless-stopped
+    
+  # =========================
+  # For GUI
+  # =========================
+  mediation-webapp:
+    build:
+      context: ../mediation-webapp
+    container_name: mediation-webapp
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
