@@ -1,0 +1,7 @@
+timestamp,source,destination,data
+20260515_161225,PGW,Fraud,null
+20260515_161235,PGW,Fraud,null
+2026-05-15 16:12:24,SMSC,Fraud,null
+2026-05-15 16:12:34,SMSC,Fraud,null
+2026-05-15 16:12:24,MSC,Fraud,null
+2026-05-15 16:12:34,MSC,Fraud,null

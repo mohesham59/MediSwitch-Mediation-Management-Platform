@@ -1,0 +1,7 @@
+timestamp,source,destination,data
+20260515_160235,PGW,Billing,null
+20260515_160245,PGW,Billing,null
+2026-05-15 16:02:35,SMSC,Billing,null
+2026-05-15 16:02:45,SMSC,Billing,null
+2026-05-15 16:02:35,MSC,Billing,null
+2026-05-15 16:02:45,MSC,Billing,null
