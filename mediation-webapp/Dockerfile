@@ -31,10 +31,6 @@ COPY --from=build /app/target/mediation-webapp.war \
 # Render assigns a dynamic port via the PORT env variable (usually 10000).
 # Tomcat must listen on that exact port or Render's health check fails.
 # The sed command patches server.xml before Tomcat starts.
-ENV PORT=8080
-RUN sed -i 's/port="8080"/port="${PORT}"/g' \
-        /usr/local/tomcat/conf/server.xml
-
-EXPOSE ${PORT}
+EXPOSE 8080
 
 CMD ["catalina.sh", "run"]
