@@ -104,6 +104,15 @@
         <servlet-name>AdminsServlet</servlet-name>
         <url-pattern>/admins/*</url-pattern>
     </servlet-mapping>
+    
+    <servlet>
+        <servlet-name>CdrFlowServlet</servlet-name>
+        <servlet-class>com.mediation.web.servlet.CdrFlowServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>CdrFlowServlet</servlet-name>
+        <url-pattern>/flow</url-pattern>
+    </servlet-mapping>
 
     <!-- ── Session ────────────────────────────────────────────── -->
     <session-config>
