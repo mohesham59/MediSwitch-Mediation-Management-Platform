@@ -6,4 +6,10 @@ target/
 .idea/
 
 # OS
-.DS_Store
+.DS_Store# Runtime CDR files
+**/cdr-files/*.txt
+**/cdr-files/*.csv
+**/cdr-files/processed/
+
+# Maven generated
+dependency-reduced-pom.xml
