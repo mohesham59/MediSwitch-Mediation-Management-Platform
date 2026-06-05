@@ -54,6 +54,9 @@ A containerized telecom mediation system that collects CDR (Call Detail Record) 
 
 All components run as Docker containers and communicate through shared volume mounts.
 
+## 🔄 Flow Diagram
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/f6b3b53d-a695-4437-8115-f37fa5030ceb" />
+
 ---
 
 ## 📁 Project Structure
