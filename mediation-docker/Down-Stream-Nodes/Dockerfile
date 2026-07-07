@@ -1,6 +1,9 @@
 # Down-Stream-Nodes/Dockerfile
 FROM bash:5.2
 
+# Install curl for FTP access
+RUN apk add --no-cache curl
+
 WORKDIR /watcher
 
 COPY watcher.sh .
