@@ -41,9 +41,9 @@ A containerized telecom mediation system that collects CDR (Call Detail Record) 
                    │   FTP SERVER      │
                    │   (fauria/vsftpd) │
                    │                   │
-                   │  /upstream/...    │◄────┐
-                   │  /downstream/...  │     │
-                   └────────┬──────────┘     │
+                   │  /upstream/...    │◄─────┐
+                   │  /downstream/...  │      │
+                   └────────┬──────────┘      │
                             │                 │
               raw FTP socket (fetch, delete)  │ raw FTP socket
                             ▼                 │ (STOR, EPSV/PASV)
