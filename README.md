@@ -88,9 +88,6 @@ This version replaces that with a **real FTP server** (`fauria/vsftpd`) sitting 
 
 The trade-off is added complexity: every producer/consumer now needs FTP credentials, has to wait for the FTP server to be ready before starting, and has to handle FTP-specific failure modes (login errors, passive-mode port ranges, etc.) — all covered below.
 
-## 🔄 Flow Diagram
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/f6b3b53d-a695-4437-8115-f37fa5030ceb" />
-
 ---
 
 ## 📁 Project Structure
