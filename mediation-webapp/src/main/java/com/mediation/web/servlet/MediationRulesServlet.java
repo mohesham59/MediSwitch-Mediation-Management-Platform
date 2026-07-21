@@ -34,6 +34,13 @@ public class MediationRulesServlet extends HttpServlet {
                 req.setAttribute("downstreamNodes", nodeRepo.findDownstream());
                 req.getRequestDispatcher("/WEB-INF/views/rule-detail.jsp").forward(req, resp);
 
+            } else if (pathInfo.startsWith("/edit/")) {
+                int id = Integer.parseInt(pathInfo.substring(6));
+                ruleRepo.findById(id).ifPresent(r -> req.setAttribute("rule", r));
+                req.setAttribute("upstreamNodes",   nodeRepo.findUpstream());
+                req.setAttribute("downstreamNodes", nodeRepo.findDownstream());
+                req.getRequestDispatcher("/WEB-INF/views/rule-form.jsp").forward(req, resp);
+
             } else if (pathInfo.startsWith("/toggle/")) {
                 int id = Integer.parseInt(pathInfo.substring(8));
                 ruleRepo.findById(id).ifPresent(r -> {
@@ -68,6 +75,13 @@ public class MediationRulesServlet extends HttpServlet {
                 int dstId  = Integer.parseInt(req.getParameter("destinationNodeId"));
                 ruleRepo.save(srcId, dstId);
                 resp.sendRedirect(req.getContextPath() + "/rules?success=created");
+
+            } else if (pathInfo != null && pathInfo.startsWith("/edit/")) {
+                int id     = Integer.parseInt(pathInfo.substring(6));
+                int srcId  = Integer.parseInt(req.getParameter("sourceNodeId"));
+                int dstId  = Integer.parseInt(req.getParameter("destinationNodeId"));
+                ruleRepo.update(id, srcId, dstId);
+                resp.sendRedirect(req.getContextPath() + "/rules/view/" + id + "?success=updated");
 
             } else if (pathInfo != null && pathInfo.startsWith("/filter/add/")) {
                 int ruleId = Integer.parseInt(pathInfo.substring(12));

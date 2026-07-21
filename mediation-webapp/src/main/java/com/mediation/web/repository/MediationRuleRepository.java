@@ -73,6 +73,17 @@ public class MediationRuleRepository {
         }
     }
 
+    public void update(int id, int sourceId, int destId) throws SQLException {
+        try (Connection c = DatabaseConfig.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "UPDATE mediation_rules SET source_node_id=?, destination_node_id=? WHERE id=?")) {
+            ps.setInt(1, sourceId);
+            ps.setInt(2, destId);
+            ps.setInt(3, id);
+            ps.executeUpdate();
+        }
+    }
+
     public void setActive(int id, boolean active) throws SQLException {
         try (Connection c = DatabaseConfig.getConnection();
              PreparedStatement ps = c.prepareStatement(

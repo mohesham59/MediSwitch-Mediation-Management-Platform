@@ -182,7 +182,7 @@
 
                 <td>
                     <div class="flex gap-2">
-                        <a href="<%= ctx %>/rules/<%= rule.getId() %>" class="btn-icon" title="View">
+                        <a href="<%= ctx %>/rules/view/<%= rule.getId() %>" class="btn-icon" title="View">
                             <i class="fas fa-eye"></i>
                         </a>
                         <a href="<%= ctx %>/rules/edit/<%= rule.getId() %>" class="btn-icon" title="Edit">
