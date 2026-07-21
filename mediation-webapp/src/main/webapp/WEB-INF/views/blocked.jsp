@@ -80,10 +80,10 @@
     <div class="card">
         <div class="card-header"><span class="card-title">Add Blocked Number</span></div>
         <div class="card-body">
-            <div class="alert alert-info" style="margin-bottom:16px;font-size:12px;">
+            <!-- <div class="alert alert-info" style="margin-bottom:16px;font-size:12px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                 Numbers in this list are checked by <strong>BLOCKED_NUMBER</strong> filtration rules.
-            </div>
+            </div> -->
             <form method="POST" action="<%= request.getContextPath() %>/blocked">
                 <div class="form-group" style="margin-bottom:14px;">
                     <label for="number">Phone Number *</label>
