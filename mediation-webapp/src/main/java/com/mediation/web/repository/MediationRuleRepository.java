@@ -24,6 +24,20 @@ public class MediationRuleRepository {
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) list.add(mapWithNodes(rs));
         }
+
+        Map<Integer, List<FiltrationRule>> filtersByRuleId = new HashMap<>();
+        try (Connection c = DatabaseConfig.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT * FROM filtration_rules ORDER BY id");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                FiltrationRule fr = mapFiltration(rs);
+                filtersByRuleId.computeIfAbsent(fr.getMediationRuleId(), k -> new ArrayList<>()).add(fr);
+            }
+        }
+        for (MediationRule rule : list) {
+            rule.setFiltrationRules(filtersByRuleId.getOrDefault(rule.getId(), new ArrayList<>()));
+        }
+
         return list;
     }
 
